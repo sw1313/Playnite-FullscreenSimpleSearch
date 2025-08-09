@@ -10,18 +10,18 @@
     <!-- 关键：不激活自己，让焦点留在 Owner 的 SearchBox -->
 
     <Window.Resources>
-        <!-- 单行普通键：行高=键高，文字垂直居中 -->
+        <!-- 单行普通键：行高=键高，文字垂直居中（高度加大到 64） -->
         <Style x:Key="KeyCell" TargetType="TextBlock">
             <Setter Property="Margin"   Value="2"/>
-            <Setter Property="MinWidth" Value="64"/>
-            <Setter Property="Height"   Value="56"/>
+            <Setter Property="MinWidth" Value="68"/>
+            <Setter Property="Height"   Value="75"/>
             <Setter Property="FontSize" Value="22"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
             <Setter Property="VerticalAlignment"   Value="Center"/>
             <Setter Property="TextAlignment"       Value="Center"/>
             <Setter Property="LineStackingStrategy" Value="BlockLineHeight"/>
-            <Setter Property="LineHeight"           Value="56"/>
+            <Setter Property="LineHeight"           Value="64"/>
             <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
             <Setter Property="TextOptions.TextRenderingMode"  Value="ClearType"/>
             <Setter Property="Background">
@@ -41,7 +41,7 @@
 
         <Style x:Key="BlankCell" TargetType="TextBlock">
             <Setter Property="Margin"   Value="2"/>
-            <Setter Property="Height"   Value="56"/>
+            <Setter Property="Height"   Value="64"/>
             <Setter Property="Background" Value="Transparent"/>
         </Style>
     </Window.Resources>
@@ -58,8 +58,9 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
+
+            <!-- ★ 列数改为 11，去掉最右侧空列 -->
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="*"/>
@@ -91,7 +92,6 @@
                     <Run Text="X" FontSize="12"/>
                 </TextBlock.Inlines>
             </TextBlock>
-            <TextBlock Grid.Row="0" Grid.Column="11" Style="{StaticResource BlankCell}"/>
 
             <!-- 第二排：qwertyuiop (完成/Start) -->
             <TextBlock Grid.Row="1" Grid.Column="0" Text="q" Style="{StaticResource KeyCell}"/>
@@ -111,9 +111,8 @@
                     <Run Text="Start" FontSize="12"/>
                 </TextBlock.Inlines>
             </TextBlock>
-            <TextBlock Grid.Row="1" Grid.Column="11" Style="{StaticResource BlankCell}"/>
 
-            <!-- 第三排：asdfghjkl; (Shift/RB=切换输入法) -->
+            <!-- 第三排：asdfghjkl; (Shift/RB) -->
             <TextBlock Grid.Row="2" Grid.Column="0" Text="a" Style="{StaticResource KeyCell}"/>
             <TextBlock Grid.Row="2" Grid.Column="1" Text="s" Style="{StaticResource KeyCell}"/>
             <TextBlock Grid.Row="2" Grid.Column="2" Text="d" Style="{StaticResource KeyCell}"/>
@@ -131,7 +130,6 @@
                     <Run Text="RB" FontSize="12"/>
                 </TextBlock.Inlines>
             </TextBlock>
-            <TextBlock Grid.Row="2" Grid.Column="11" Style="{StaticResource BlankCell}"/>
 
             <!-- 第四排：zxcvbnm-:! (取消/B) -->
             <TextBlock Grid.Row="3" Grid.Column="0" Text="z" Style="{StaticResource KeyCell}"/>
@@ -151,9 +149,8 @@
                     <Run Text="B" FontSize="12"/>
                 </TextBlock.Inlines>
             </TextBlock>
-            <TextBlock Grid.Row="3" Grid.Column="11" Style="{StaticResource BlankCell}"/>
 
-            <!-- 第五排（修改后）：Caps×2 / Space×5 / PgUp×1 / PgDn×1 / Clear×2 -->
+            <!-- 第五排：Caps×2 / Space×5 / PgUp×1 / PgDn×1 / Clear×2（不再有最右空列） -->
             <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Tag="Caps" Style="{StaticResource FuncCell}">
                 <TextBlock.Inlines>
                     <Run Text="⇪"/>
@@ -162,7 +159,6 @@
                 </TextBlock.Inlines>
             </TextBlock>
 
-            <!-- Space 从 7 格改为 5 格（列 2..6） -->
             <TextBlock Grid.Row="4" Grid.Column="2" Grid.ColumnSpan="5" Tag="Space" Style="{StaticResource FuncCell}">
                 <TextBlock.Inlines>
                     <Run Text="Space"/>
@@ -171,21 +167,18 @@
                 </TextBlock.Inlines>
             </TextBlock>
 
-            <!-- 新增 PgUp（1 格，列 7） -->
-            <TextBlock Grid.Row="4" Grid.Column="7" Tag="PgUp" Style="{StaticResource FuncCell}" FontSize="18">
+            <TextBlock Grid.Row="4" Grid.Column="7" Tag="PgUp" Style="{StaticResource FuncCell}">
                 <TextBlock.Inlines>
                     <Run Text="PgUp"/>
                 </TextBlock.Inlines>
             </TextBlock>
 
-            <!-- 新增 PgDn（1 格，列 8） -->
-            <TextBlock Grid.Row="4" Grid.Column="8" Tag="PgDn" Style="{StaticResource FuncCell}" FontSize="18">
+            <TextBlock Grid.Row="4" Grid.Column="8" Tag="PgDn" Style="{StaticResource FuncCell}">
                 <TextBlock.Inlines>
                     <Run Text="PgDn"/>
                 </TextBlock.Inlines>
             </TextBlock>
 
-            <!-- Clear 保持 2 格（列 9..10） -->
             <TextBlock Grid.Row="4" Grid.Column="9" Grid.ColumnSpan="2" Tag="Clear" Style="{StaticResource FuncCell}">
                 <TextBlock.Inlines>
                     <Run Text="Clear"/>
@@ -193,8 +186,6 @@
                     <Run Text="LB" FontSize="12"/>
                 </TextBlock.Inlines>
             </TextBlock>
-
-            <TextBlock Grid.Row="4" Grid.Column="11" Style="{StaticResource BlankCell}"/>
         </Grid>
     </Border>
 </Window>

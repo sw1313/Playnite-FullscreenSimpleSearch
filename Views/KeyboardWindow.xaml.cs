@@ -17,7 +17,8 @@ namespace OverlaySearch.Views
     {
         public string ResultText { get; private set; } = "";
 
-        private const int Rows = 5, Cols = 12;
+        // 布局（与 XAML 一致）
+        private const int Rows = 5, Cols = 11;
 
         // 导航 & 渲染
         private TextBlock[,] cellMap;
@@ -29,13 +30,26 @@ namespace OverlaySearch.Views
         private bool caps = false;       // 大小写
         private bool altLayout = false;  // 符号面板（true=符号，false=字母）
 
-        // 轮询/去抖
+        // 轮询/互斥
         private DispatcherTimer poll;
         private ushort lastButtons;
         private bool lastLT;                          // LT 边沿
-        private bool dpadHeld = false;                // D-Pad 按住
+        private bool dpadHeld = false;                // D-Pad 是否按住
         private bool suppressNextKeyboardNav = false; // 手柄触发后吞掉下一次键盘导航
         private DateTime keyboardNavSquelchUntilUtc = DateTime.MinValue;
+
+        // === D-Pad 单次触发门限：中立 → 某方向 触发一次；必须回到中立后才允许下次 ===
+        private bool dpadLatched = false;
+        private ushort lastDpadState = 0;
+
+        // === 左摇杆：死区 + 点按触发 + 长按重复 ===
+        private const short LSTICK_DEADZONE = 9000;       // 可调：8000~12000
+        private const int LSTICK_REPEAT_DELAY_MS = 300; // 长按起始延迟
+        private const int LSTICK_REPEAT_RATE_MS = 90;  // 长按后的重复间隔
+        private bool lstickHeld = false;
+        private bool lstickLatched = false;
+        private byte lastLStickCardinal = 0;              // 0无、1左、2右、3上、4下
+        private DateTime lstickNextRepeatUtc = DateTime.MinValue;
 
         // 功能键识别
         private readonly HashSet<string> funcTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -134,7 +148,7 @@ namespace OverlaySearch.Views
             poll.Start();
             TryEnableAcrylic(unchecked((int)0xCC101010)); // AABBGGRR
 
-            // 安装低层键盘钩子：拦截 ←↑→↓ / Enter / Esc，避免被中文 IME 候选吞掉
+            // 安装低层键盘钩子：拦截 ←↑→↓ / Enter / Esc，避免被 IME/外部映射吞掉或重复
             InstallNavKeyHook();
         }
 
@@ -148,6 +162,9 @@ namespace OverlaySearch.Views
 
         public void OwnerHandleKey(System.Windows.Input.Key key)
         {
+            // 兜底：在手柄/摇杆触发后的消抖期不处理导航键，防双触发
+            if (ShouldBlockNavKeysNow()) return;
+
             switch (key)
             {
                 case System.Windows.Input.Key.Left: Move(-1, 0); break;
@@ -158,6 +175,15 @@ namespace OverlaySearch.Views
                 case System.Windows.Input.Key.Escape: Cancel(); break;
                 default: break;
             }
+        }
+
+        /* ---------- 辅助：是否应屏蔽导航键（键盘方向/Enter/Esc） ---------- */
+        private bool ShouldBlockNavKeysNow()
+        {
+            return dpadHeld
+                || lstickHeld
+                || DateTime.UtcNow < keyboardNavSquelchUntilUtc
+                || suppressNextKeyboardNav;
         }
 
         /* ---------- 映射/导航 ---------- */
@@ -217,28 +243,24 @@ namespace OverlaySearch.Views
         // 一次跳到“下一个不同控件”，不被跨列/跨行“吃格子”
         private void Move(int dx, int dy)
         {
-            // 只支持水平或垂直一次移动（不走对角）
             if ((dx == 0 && dy == 0) || (dx != 0 && dy != 0)) return;
 
             TextBlock cur = cellMap[row, col];
-            int nr = row;
-            int nc = col;
+            int nr = row, nc = col;
 
-            if (dx != 0) // 水平
+            if (dx != 0)
             {
                 int step = dx > 0 ? 1 : -1;
                 int c = col;
                 TextBlock tb = cur;
 
-                // 跨过当前控件占据的列（ColumnSpan）
                 do
                 {
                     c += step;
-                    if (c < 0 || c >= Cols) return; // 边界停止
+                    if (c < 0 || c >= Cols) return;
                     tb = cellMap[row, c];
                 } while (tb == cur);
 
-                // 继续跨过空白/不可选
                 while (c >= 0 && c < Cols && !IsSelectable(tb, funcTags))
                 {
                     c += step;
@@ -247,16 +269,14 @@ namespace OverlaySearch.Views
                     if (tb == cur) return;
                 }
 
-                nr = row;
-                nc = c;
+                nr = row; nc = c;
             }
-            else // 垂直
+            else
             {
                 int step = dy > 0 ? 1 : -1;
                 int r = row;
                 TextBlock tb = cur;
 
-                // 跨过当前控件占据的行（RowSpan）
                 do
                 {
                     r += step;
@@ -264,7 +284,6 @@ namespace OverlaySearch.Views
                     tb = cellMap[r, col];
                 } while (tb == cur);
 
-                // 继续跨过空白/不可选
                 while (r >= 0 && r < Rows && !IsSelectable(tb, funcTags))
                 {
                     r += step;
@@ -273,19 +292,17 @@ namespace OverlaySearch.Views
                     if (tb == cur) return;
                 }
 
-                nr = r;
-                nc = col;
+                nr = r; nc = col;
             }
 
             TextBlock next = cellMap[nr, nc];
             if (next == null || !IsSelectable(next, funcTags)) return;
 
-            row = nr;
-            col = nc;
+            row = nr; col = nc;
             SetHighlight(next);
         }
 
-        /* ---------- 手柄轮询（RB=中英；LT=符号） ---------- */
+        /* ---------- 手柄轮询（RB=纯Shift；RS=Caps；LT=符号；D-Pad/左摇杆） ---------- */
         private void PollPad(object s, EventArgs e)
         {
             XSTATE st;
@@ -296,14 +313,95 @@ namespace OverlaySearch.Views
 
             bool moved = false, acted = false;
 
-            // D-Pad：只在边沿变化时移动
-            if (Edge(0x0004)) { Move(-1, 0); moved = true; } // 左
-            if (Edge(0x0008)) { Move(1, 0); moved = true; }  // 右
-            if (Edge(0x0001)) { Move(0, -1); moved = true; } // 上
-            if (Edge(0x0002)) { Move(0, 1); moved = true; }  // 下
+            // === D-Pad：必须从中立(0)→某方向 才触发一次；未回弹即换方向都不触发 ===
+            ushort dir = (ushort)(b & 0x000F);     // U=0x0001, D=0x0002, L=0x0004, R=0x0008
+            ushort prevDir = (ushort)(o & 0x000F);
+            dpadHeld = dir != 0;
 
-            // D-Pad 是否按住（用于手柄优先的键盘屏蔽）
-            dpadHeld = (b & 0x000F) != 0;
+            if (dir == 0)
+            {
+                dpadLatched = false;
+                lastDpadState = 0;
+            }
+            else
+            {
+                if (!dpadLatched && prevDir == 0)
+                {
+                    // 固定优先级：左→右→上→下，避免斜向同帧触发多次
+                    if ((dir & 0x0004) != 0) { Move(-1, 0); moved = true; }
+                    else if ((dir & 0x0008) != 0) { Move(1, 0); moved = true; }
+                    else if ((dir & 0x0001) != 0) { Move(0, -1); moved = true; }
+                    else if ((dir & 0x0002) != 0) { Move(0, 1); moved = true; }
+
+                    dpadLatched = true;
+                    lastDpadState = dir;
+                }
+                // 未回弹期间换方向：忽略直到回到中立
+            }
+
+            // === 左摇杆：死区 + 点按触发 + 长按连移（只取一个主轴方向） ===
+            int lx = st.Gamepad.LX;  // -32768..32767
+            int ly = st.Gamepad.LY;  // -32768..32767（XInput: ly>0 为 ↑；若相反请在下方互换 3/4）
+
+            byte stickCard = 0;
+            int ax = Math.Abs(lx), ay = Math.Abs(ly);
+
+            if (ax > ay)
+            {
+                if (ax > LSTICK_DEADZONE) stickCard = (lx < 0) ? (byte)1 : (byte)2; // 左/右
+            }
+            else
+            {
+                if (ay > LSTICK_DEADZONE) stickCard = (ly > 0) ? (byte)3 : (byte)4; // 上/下
+                // 若你的手柄坐标系相反，把上一行改成：stickCard = (ly > 0) ? (byte)4 : (byte)3;
+            }
+
+            lstickHeld = stickCard != 0;
+
+            if (stickCard == 0)
+            {
+                // 回到死区内：解除锁存，准备下一次点按
+                lstickLatched = false;
+                lastLStickCardinal = 0;
+            }
+            else
+            {
+                if (!lstickLatched)
+                {
+                    // 中立 → 某方向：触发一次
+                    if (stickCard == 1) { Move(-1, 0); moved = true; }
+                    else if (stickCard == 2) { Move(1, 0); moved = true; }
+                    else if (stickCard == 3) { Move(0, -1); moved = true; }
+                    else if (stickCard == 4) { Move(0, 1); moved = true; }
+
+                    lstickLatched = true;
+                    lastLStickCardinal = stickCard;
+                    lstickNextRepeatUtc = DateTime.UtcNow.AddMilliseconds(LSTICK_REPEAT_DELAY_MS);
+                }
+                else
+                {
+                    // 已锁存：支持长按连移；若换方向则立即切换方向并重置重复节拍
+                    if (stickCard != lastLStickCardinal)
+                    {
+                        if (stickCard == 1) { Move(-1, 0); moved = true; }
+                        else if (stickCard == 2) { Move(1, 0); moved = true; }
+                        else if (stickCard == 3) { Move(0, -1); moved = true; }
+                        else if (stickCard == 4) { Move(0, 1); moved = true; }
+
+                        lastLStickCardinal = stickCard;
+                        lstickNextRepeatUtc = DateTime.UtcNow.AddMilliseconds(LSTICK_REPEAT_DELAY_MS);
+                    }
+                    else if (DateTime.UtcNow >= lstickNextRepeatUtc)
+                    {
+                        if (stickCard == 1) { Move(-1, 0); moved = true; }
+                        else if (stickCard == 2) { Move(1, 0); moved = true; }
+                        else if (stickCard == 3) { Move(0, -1); moved = true; }
+                        else if (stickCard == 4) { Move(0, 1); moved = true; }
+
+                        lstickNextRepeatUtc = DateTime.UtcNow.AddMilliseconds(LSTICK_REPEAT_RATE_MS);
+                    }
+                }
+            }
 
             // 动作键
             if (Edge(0x1000)) { PressKey(); acted = true; }                     // A
@@ -313,8 +411,14 @@ namespace OverlaySearch.Views
             if (Edge(0x8000)) { Append(" "); acted = true; }                    // Y 空格
             if (Edge(0x0100)) { ClearAllByCtrlADelete(); acted = true; }        // LB 清空
 
-            // RB：切换系统中/英输入法
-            if (Edge(0x0200)) { ToggleSystemIme(); acted = true; }
+            // RB：纯 Shift 按下/抬起（不触发 Alt+Shift）
+            bool rbDown = ((b & 0x0200) != 0) && ((o & 0x0200) == 0);
+            bool rbUp = ((b & 0x0200) == 0) && ((o & 0x0200) != 0);
+            if (rbDown) { KeyDownVK(VK_SHIFT); acted = true; }
+            if (rbUp) { KeyUpVK(VK_SHIFT); acted = true; }
+
+            // RS：切换大小写
+            if (Edge(0x0080)) { ToggleCaps(); acted = true; }                   // RIGHT_THUMB
 
             // LT：切换符号/字母面板（阈值>30；边沿）
             bool ltNow = st.Gamepad.LT > 30;
@@ -333,8 +437,12 @@ namespace OverlaySearch.Views
         /* ---------- 键盘方向/功能（与手柄互斥） ---------- */
         protected override void OnPreviewKeyDown(KeyEventArgs e)
         {
-            // 非激活窗通常收不到硬件键盘，这里保留以兼容某些激活场景
             if (dpadHeld &&
+               (e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.Up || e.Key == Key.Down ||
+                e.Key == Key.Enter || e.Key == Key.Escape))
+            { e.Handled = true; return; }
+
+            if (lstickHeld &&
                (e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.Up || e.Key == Key.Down ||
                 e.Key == Key.Enter || e.Key == Key.Escape))
             { e.Handled = true; return; }
@@ -360,10 +468,7 @@ namespace OverlaySearch.Views
                 case Key.Space: Append(" "); e.Handled = true; return;
                 case Key.Back: SendBackspace(); e.Handled = true; return;
 
-                case Key.LeftShift:
-                case Key.RightShift:
-                    ToggleSystemIme(); e.Handled = true; return;
-
+                // 不再用 Shift 触发系统中英切换，避免与 RB=Shift 冲突
                 case Key.Escape: Cancel(); e.Handled = true; return;
             }
 
@@ -372,7 +477,6 @@ namespace OverlaySearch.Views
 
         /* ---------- 输入/功能 ---------- */
         private TextBlock CurrentCell() { return cellMap[row, col]; }
-
         private void SendBackspace() { TapVK(VK_BACK); }
 
         private void PressKey()
@@ -388,12 +492,12 @@ namespace OverlaySearch.Views
                 case "Back": SendBackspace(); return;
                 case "Done": Done(); return;
                 case "Cancel": Cancel(); return;
-                case "Shift": ToggleSystemIme(); return; // ⇧：切换中/英（与 RB 一致）
-                case "Caps": ToggleCaps(); return;       // ⇪：大小写
+                case "Shift": TapVK(VK_SHIFT); return; // 点按 Shift
+                case "Caps": ToggleCaps(); return;
                 case "Space": Append(" "); return;
                 case "Clear": ClearAllByCtrlADelete(); return;
-                case "PgUp": TapVK(VK_PRIOR); return;   // Page Up
-                case "PgDn": TapVK(VK_NEXT); return;   // Page Down
+                case "PgUp": TapVK(VK_PRIOR); return;
+                case "PgDn": TapVK(VK_NEXT); return;
                 default:
                     if (!string.IsNullOrEmpty(t)) Append(t);
                     return;
@@ -418,6 +522,7 @@ namespace OverlaySearch.Views
             RefreshFaces();
         }
 
+        // 如需保留系统中英切换（手动调用）
         private void ToggleSystemIme()
         {
             OverlayWindow ow = Owner as OverlayWindow;
@@ -456,11 +561,7 @@ namespace OverlaySearch.Views
         private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct INPUT
-        {
-            public uint type;
-            public INPUTUNION U;
-        }
+        private struct INPUT { public uint type; public INPUTUNION U; }
 
         [StructLayout(LayoutKind.Explicit)]
         private struct INPUTUNION
@@ -471,29 +572,13 @@ namespace OverlaySearch.Views
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct MOUSEINPUT
-        {
-            public int dx, dy;
-            public uint mouseData, dwFlags, time;
-            public IntPtr dwExtraInfo;
-        }
+        private struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public IntPtr dwExtraInfo; }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct KEYBDINPUT
-        {
-            public ushort wVk;
-            public ushort wScan;
-            public uint dwFlags;
-            public uint time;
-            public IntPtr dwExtraInfo;
-        }
+        private struct KEYBDINPUT { public ushort wVk, wScan; public uint dwFlags, time; public IntPtr dwExtraInfo; }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct HARDWAREINPUT
-        {
-            public uint uMsg;
-            public ushort wParamL, wParamH;
-        }
+        private struct HARDWAREINPUT { public uint uMsg; public ushort wParamL, wParamH; }
 
         private const uint INPUT_KEYBOARD = 1;
         private const uint KEYEVENTF_KEYUP = 0x0002;
@@ -512,27 +597,13 @@ namespace OverlaySearch.Views
 
         private static void KeyDownVK(ushort vk)
         {
-            INPUT input = new INPUT
-            {
-                type = INPUT_KEYBOARD,
-                U = new INPUTUNION
-                {
-                    ki = new KEYBDINPUT { wVk = vk, wScan = 0, dwFlags = 0, time = 0, dwExtraInfo = IntPtr.Zero }
-                }
-            };
+            INPUT input = new INPUT { type = INPUT_KEYBOARD, U = new INPUTUNION { ki = new KEYBDINPUT { wVk = vk } } };
             SendInput(1, new INPUT[] { input }, INPUT_SIZE);
         }
 
         private static void KeyUpVK(ushort vk)
         {
-            INPUT input = new INPUT
-            {
-                type = INPUT_KEYBOARD,
-                U = new INPUTUNION
-                {
-                    ki = new KEYBDINPUT { wVk = vk, wScan = 0, dwFlags = KEYEVENTF_KEYUP, time = 0, dwExtraInfo = IntPtr.Zero }
-                }
-            };
+            INPUT input = new INPUT { type = INPUT_KEYBOARD, U = new INPUTUNION { ki = new KEYBDINPUT { wVk = vk, dwFlags = KEYEVENTF_KEYUP } } };
             SendInput(1, new INPUT[] { input }, INPUT_SIZE);
         }
 
@@ -544,29 +615,12 @@ namespace OverlaySearch.Views
             if (withShift) KeyUpVK(VK_SHIFT);
         }
 
-        private static void TapVK(ushort vk)
-        {
-            TapVK(vk, false);
-        }
+        private static void TapVK(ushort vk) => TapVK(vk, false);
 
         private static void SendUnicodeChar(char ch)
         {
-            INPUT down = new INPUT
-            {
-                type = INPUT_KEYBOARD,
-                U = new INPUTUNION
-                {
-                    ki = new KEYBDINPUT { wVk = 0, wScan = ch, dwFlags = KEYEVENTF_UNICODE, time = 0, dwExtraInfo = IntPtr.Zero }
-                }
-            };
-            INPUT up = new INPUT
-            {
-                type = INPUT_KEYBOARD,
-                U = new INPUTUNION
-                {
-                    ki = new KEYBDINPUT { wVk = 0, wScan = ch, dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, time = 0, dwExtraInfo = IntPtr.Zero }
-                }
-            };
+            INPUT down = new INPUT { type = INPUT_KEYBOARD, U = new INPUTUNION { ki = new KEYBDINPUT { wScan = ch, dwFlags = KEYEVENTF_UNICODE } } };
+            INPUT up = new INPUT { type = INPUT_KEYBOARD, U = new INPUTUNION { ki = new KEYBDINPUT { wScan = ch, dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP } } };
             SendInput(1, new INPUT[] { down }, INPUT_SIZE);
             SendInput(1, new INPUT[] { up }, INPUT_SIZE);
         }
@@ -580,7 +634,6 @@ namespace OverlaySearch.Views
 
         private static void ClearAllByCtrlADelete()
         {
-            // Ctrl+A 选中，再 Delete 清空（让控件/IME自己处理）
             TapCtrlPlus((ushort)('A'));
             TapVK(VK_DELETE);
         }
@@ -589,13 +642,8 @@ namespace OverlaySearch.Views
         {
             foreach (char ch in s)
             {
-                if (ch == ' ')
-                {
-                    TapVK(VK_SPACE);
-                    continue;
-                }
+                if (ch == ' ') { TapVK(VK_SPACE); continue; }
 
-                // 字母：用 VK + (可选)Shift —— 这样 IME 能接管拼音组合
                 if (ch >= 'a' && ch <= 'z')
                 {
                     ushort vk = (ushort)('A' + (ch - 'a')); // VK_A..VK_Z
@@ -609,22 +657,20 @@ namespace OverlaySearch.Views
                     continue;
                 }
 
-                // 数字：用 VK_0..VK_9
                 if (ch >= '0' && ch <= '9')
                 {
-                    ushort vkDigit = (ushort)ch; // VK_0..VK_9 与 ASCII 对齐
+                    ushort vkDigit = (ushort)ch; // VK_0..VK_9
                     TapVK(vkDigit);
                     continue;
                 }
 
-                // 其它符号：直接送 Unicode（绕过 IME 组合，直接提交）
                 SendUnicodeChar(ch);
             }
         }
 
         /* ---------- XInput & Acrylic ---------- */
         [DllImport("xinput1_4.dll")] private static extern int XInputGetState(uint i, out XSTATE s);
-        // 如缺库可改为 xinput9_1_0.dll
+        // 旧系统可换 "xinput9_1_0.dll"
 
         [StructLayout(LayoutKind.Sequential)]
         private struct XSTATE { public uint dwPacketNumber; public XGAMEPAD Gamepad; }
@@ -678,11 +724,11 @@ namespace OverlaySearch.Views
         [DllImport("user32.dll")]
         private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WINDOWCOMPOSITIONATTRIBDATA data);
 
-        /* ================= 低层键盘钩子：拦截导航键，避开 IME ================= */
+        /* ================= 低层键盘钩子：拦截导航键，避开 IME & 双触发 ================= */
 
         private static IntPtr _hookId = IntPtr.Zero;
         private static LowLevelKeyboardProc _hookProc = HookCallback;
-        private static KeyboardWindow _hookTarget; // 当前需要拦截导航键的窗口
+        private static KeyboardWindow _hookTarget;
 
         private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 
@@ -761,13 +807,24 @@ namespace OverlaySearch.Views
                         OverlayWindow owner = target.Owner as OverlayWindow;
                         bool ownerActive = owner != null && owner.IsActive;
 
-                        if (ownerActive &&
-                            (vk == VK_LEFT || vk == VK_RIGHT || vk == VK_UP || vk == VK_DOWN || vk == VK_RETURN || vk == VK_ESCAPE))
+                        bool isNav =
+                            vk == VK_LEFT || vk == VK_RIGHT || vk == VK_UP || vk == VK_DOWN ||
+                            vk == VK_RETURN || vk == VK_ESCAPE;
+
+                        if (ownerActive && isNav)
                         {
-                            // 把导航键交给虚拟键盘，并吞掉它，避免被 IME 候选框抢走
+                            // ★ 关键：在手柄/摇杆触发后的消抖期内，直接吞掉键盘导航键，避免“按一下触发两次”
+                            if (target.ShouldBlockNavKeysNow())
+                                return new IntPtr(1); // 吞键
+
+                            // 正常情况：把方向/Enter/Esc 交给虚拟键盘处理
                             Key routed = KeyInterop.KeyFromVirtualKey(vk);
-                            target.Dispatcher.BeginInvoke(new Action<Key>(target.OwnerHandleKey), DispatcherPriority.Send, routed);
-                            return new IntPtr(1); // 吞键
+                            target.Dispatcher.BeginInvoke(
+                                new Action<Key>(target.OwnerHandleKey),
+                                DispatcherPriority.Send,
+                                routed);
+
+                            return new IntPtr(1); // 仍吞键，避免落到系统焦点
                         }
                     }
                 }

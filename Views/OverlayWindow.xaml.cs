@@ -14,8 +14,8 @@ namespace OverlaySearch.Views
         private DispatcherTimer padTimer;
         private ushort lastButtons;
         private bool childOpen = false;
-        private bool absorbNextPadState = false;                  // 关闭子窗后吸收第一帧手柄状态
-        private DateTime inputSquelchUntilUtc = DateTime.MinValue; // 关闭子窗后 200ms 消抖
+        private bool absorbNextPadState = false;                    // 关闭子窗后吸收第一帧手柄状态
+        private DateTime inputSquelchUntilUtc = DateTime.MinValue;  // 关闭子窗后 200ms 消抖
 
         private KeyboardWindow kbOpen; // 当前打开的虚拟键盘窗
 
@@ -159,7 +159,7 @@ namespace OverlaySearch.Views
             base.OnPreviewKeyDown(e);
         }
 
-        // ====== 切换微软拼音(zh-CN) <-> 英文(US) ======
+        // ====== 切换微软拼音(zh-CN) <-> 英文(US)（如需手动调用） ======
         public bool ToggleImeLanguage()
         {
             FocusSearchBoxCaret();
