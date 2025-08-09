@@ -1,0 +1,200 @@
+﻿<Window x:Class="OverlaySearch.Views.KeyboardWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
+        AllowsTransparency="True" Background="Transparent"
+        SizeToContent="WidthAndHeight"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        WindowStartupLocation="CenterOwner"
+        ShowActivated="False">
+    <!-- 关键：不激活自己，让焦点留在 Owner 的 SearchBox -->
+
+    <Window.Resources>
+        <!-- 单行普通键：行高=键高，文字垂直居中 -->
+        <Style x:Key="KeyCell" TargetType="TextBlock">
+            <Setter Property="Margin"   Value="2"/>
+            <Setter Property="MinWidth" Value="64"/>
+            <Setter Property="Height"   Value="56"/>
+            <Setter Property="FontSize" Value="22"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="VerticalAlignment"   Value="Center"/>
+            <Setter Property="TextAlignment"       Value="Center"/>
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight"/>
+            <Setter Property="LineHeight"           Value="56"/>
+            <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
+            <Setter Property="TextOptions.TextRenderingMode"  Value="ClearType"/>
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="#33000000"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 两行功能键：图标+手柄提示；整体下移使两行居中 -->
+        <Style x:Key="FuncCell" TargetType="TextBlock" BasedOn="{StaticResource KeyCell}">
+            <Setter Property="Foreground" Value="#66CCFF"/>
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight"/>
+            <Setter Property="LineHeight" Value="18"/>
+            <Setter Property="Padding" Value="0,15,0,0"/>
+        </Style>
+
+        <Style x:Key="BlankCell" TargetType="TextBlock">
+            <Setter Property="Margin"   Value="2"/>
+            <Setter Property="Height"   Value="56"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+    </Window.Resources>
+
+    <Border x:Name="Chrome" CornerRadius="10" Padding="10"
+            Background="#20000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center">
+
+        <Grid x:Name="GridKeys">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 第一排：1234567890 (删除/X) -->
+            <TextBlock Grid.Row="0" Grid.Column="0"  Text="1" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="0" Grid.Column="1"  Text="2" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="0" Grid.Column="2"  Text="3" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="0" Grid.Column="3"  Text="4" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="0" Grid.Column="4"  Text="5" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="0" Grid.Column="5"  Text="6" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="0" Grid.Column="6"  Text="7" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="0" Grid.Column="7"  Text="8" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="0" Grid.Column="8"  Text="9" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="0" Grid.Column="9"  Text="0" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="0" Grid.Column="10" Tag="Back" Style="{StaticResource FuncCell}">
+                <TextBlock.Inlines>
+                    <Run Text="⌫"/>
+                    <LineBreak/>
+                    <Run Text="X" FontSize="12"/>
+                </TextBlock.Inlines>
+            </TextBlock>
+            <TextBlock Grid.Row="0" Grid.Column="11" Style="{StaticResource BlankCell}"/>
+
+            <!-- 第二排：qwertyuiop (完成/Start) -->
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="q" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="w" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="1" Grid.Column="2" Text="e" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="1" Grid.Column="3" Text="r" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="1" Grid.Column="4" Text="t" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="1" Grid.Column="5" Text="y" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="1" Grid.Column="6" Text="u" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="1" Grid.Column="7" Text="i" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="1" Grid.Column="8" Text="o" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="1" Grid.Column="9" Text="p" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="1" Grid.Column="10" Tag="Done" Style="{StaticResource FuncCell}">
+                <TextBlock.Inlines>
+                    <Run Text="⏎"/>
+                    <LineBreak/>
+                    <Run Text="Start" FontSize="12"/>
+                </TextBlock.Inlines>
+            </TextBlock>
+            <TextBlock Grid.Row="1" Grid.Column="11" Style="{StaticResource BlankCell}"/>
+
+            <!-- 第三排：asdfghjkl; (Shift/RB=切换输入法) -->
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="a" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="s" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="2" Grid.Column="2" Text="d" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="2" Grid.Column="3" Text="f" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="2" Grid.Column="4" Text="g" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="2" Grid.Column="5" Text="h" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="2" Grid.Column="6" Text="j" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="2" Grid.Column="7" Text="k" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="2" Grid.Column="8" Text="l" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="2" Grid.Column="9" Text=";" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="2" Grid.Column="10" Tag="Shift" Style="{StaticResource FuncCell}">
+                <TextBlock.Inlines>
+                    <Run Text="⇧"/>
+                    <LineBreak/>
+                    <Run Text="RB" FontSize="12"/>
+                </TextBlock.Inlines>
+            </TextBlock>
+            <TextBlock Grid.Row="2" Grid.Column="11" Style="{StaticResource BlankCell}"/>
+
+            <!-- 第四排：zxcvbnm-:! (取消/B) -->
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="z" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="3" Grid.Column="1" Text="x" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="3" Grid.Column="2" Text="c" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="3" Grid.Column="3" Text="v" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="3" Grid.Column="4" Text="b" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="3" Grid.Column="5" Text="n" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="3" Grid.Column="6" Text="m" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="3" Grid.Column="7" Text="-" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="3" Grid.Column="8" Text=":" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="3" Grid.Column="9" Text="!" Style="{StaticResource KeyCell}"/>
+            <TextBlock Grid.Row="3" Grid.Column="10" Tag="Cancel" Style="{StaticResource FuncCell}">
+                <TextBlock.Inlines>
+                    <Run Text="✕"/>
+                    <LineBreak/>
+                    <Run Text="B" FontSize="12"/>
+                </TextBlock.Inlines>
+            </TextBlock>
+            <TextBlock Grid.Row="3" Grid.Column="11" Style="{StaticResource BlankCell}"/>
+
+            <!-- 第五排（修改后）：Caps×2 / Space×5 / PgUp×1 / PgDn×1 / Clear×2 -->
+            <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Tag="Caps" Style="{StaticResource FuncCell}">
+                <TextBlock.Inlines>
+                    <Run Text="⇪"/>
+                    <LineBreak/>
+                    <Run Text="RS" FontSize="12"/>
+                </TextBlock.Inlines>
+            </TextBlock>
+
+            <!-- Space 从 7 格改为 5 格（列 2..6） -->
+            <TextBlock Grid.Row="4" Grid.Column="2" Grid.ColumnSpan="5" Tag="Space" Style="{StaticResource FuncCell}">
+                <TextBlock.Inlines>
+                    <Run Text="Space"/>
+                    <LineBreak/>
+                    <Run Text="Y" FontSize="12"/>
+                </TextBlock.Inlines>
+            </TextBlock>
+
+            <!-- 新增 PgUp（1 格，列 7） -->
+            <TextBlock Grid.Row="4" Grid.Column="7" Tag="PgUp" Style="{StaticResource FuncCell}" FontSize="18">
+                <TextBlock.Inlines>
+                    <Run Text="PgUp"/>
+                </TextBlock.Inlines>
+            </TextBlock>
+
+            <!-- 新增 PgDn（1 格，列 8） -->
+            <TextBlock Grid.Row="4" Grid.Column="8" Tag="PgDn" Style="{StaticResource FuncCell}" FontSize="18">
+                <TextBlock.Inlines>
+                    <Run Text="PgDn"/>
+                </TextBlock.Inlines>
+            </TextBlock>
+
+            <!-- Clear 保持 2 格（列 9..10） -->
+            <TextBlock Grid.Row="4" Grid.Column="9" Grid.ColumnSpan="2" Tag="Clear" Style="{StaticResource FuncCell}">
+                <TextBlock.Inlines>
+                    <Run Text="Clear"/>
+                    <LineBreak/>
+                    <Run Text="LB" FontSize="12"/>
+                </TextBlock.Inlines>
+            </TextBlock>
+
+            <TextBlock Grid.Row="4" Grid.Column="11" Style="{StaticResource BlankCell}"/>
+        </Grid>
+    </Border>
+</Window>
