@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Threading;   // DispatcherTimer
 
 namespace OverlaySearch
 {
@@ -18,6 +19,12 @@ namespace OverlaySearch
         private const Key HOTKEY_KEY = Key.Y;          // Ctrl-Shift-Y
         private const int HOTKEY_ID = 0x0BEE;
 
+        // === 手柄触发（LT+RT）参数 ===
+        private const byte LT_THRESHOLD = 30;          // 超过阈值算“按下”
+        private const byte RT_THRESHOLD = 30;
+        private DispatcherTimer gpPoller;              // XInput 轮询
+        private bool lastLtRtDown = false;             // 上一帧 LT+RT 是否“组合按下”
+
         private readonly IPlayniteAPI api;
         private HotkeyWnd hotWnd;
         private static bool overlayOpen = false;
@@ -25,14 +32,57 @@ namespace OverlaySearch
         public Plugin(IPlayniteAPI api) : base(api) { this.api = api; }
         public override Guid Id => Guid.Parse("45c8ea9b-d95a-4fe7-807d-bb1f8d36d9a6");
 
-        public override void OnApplicationStarted(OnApplicationStartedEventArgs _)
+        public override void OnApplicationStarted(OnApplicationStartedEventArgs args)
         {
+            // 键盘热键
             hotWnd = new HotkeyWnd((uint)HOTKEY_MODS,
                                    (uint)KeyInterop.VirtualKeyFromKey(HOTKEY_KEY),
                                    HOTKEY_ID);
             hotWnd.Pressed += ShowOverlay;
+
+            // 手柄 LT+RT 轮询
+            gpPoller = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
+            gpPoller.Tick += (s, e) => PollGamepadForHotkey();
+            gpPoller.Start();
         }
-        public override void OnApplicationStopped(OnApplicationStoppedEventArgs _) => hotWnd?.Dispose();
+
+        public override void OnApplicationStopped(OnApplicationStoppedEventArgs args)
+        {
+            hotWnd?.Dispose();
+            if (gpPoller != null)
+            {
+                gpPoller.Stop();
+                gpPoller = null;
+            }
+        }
+
+        private void PollGamepadForHotkey()
+        {
+            // 仅在 Playnite 主窗口前台时响应，避免在别的程序/游戏里误触
+            var app = System.Windows.Application.Current;
+            var mainWin = app?.MainWindow;
+            if (mainWin == null) { lastLtRtDown = false; return; }
+
+            IntPtr hwndMain = new WindowInteropHelper(mainWin).Handle;
+            IntPtr hwndFg = Native.GetForegroundWindow();
+            if (hwndFg != hwndMain) { lastLtRtDown = false; return; }
+
+            // 读取 XInput（手柄 0）
+            XSTATE st;
+            if (XInputGetState(0, out st) != 0) { lastLtRtDown = false; return; } // 手柄不在线
+
+            bool ltDown = st.Gamepad.LT > LT_THRESHOLD;
+            bool rtDown = st.Gamepad.RT > RT_THRESHOLD;
+            bool comboDown = ltDown && rtDown;
+
+            // 组合上升沿：上帧未同时按下，这一帧变为同时按下 → 触发一次
+            if (comboDown && !lastLtRtDown)
+            {
+                ShowOverlay(); // 与 Ctrl+Shift+Y 相同的行为
+            }
+
+            lastLtRtDown = comboDown;
+        }
 
         private void ShowOverlay()
         {
@@ -137,7 +187,7 @@ namespace OverlaySearch
                     Width = 0,
                     Height = 0,
                     WindowStyle = unchecked((int)0x80000000), // WS_DISABLED
-                    ExtendedWindowStyle = 0x00000080                  // WS_EX_TOOLWINDOW
+                    ExtendedWindowStyle = 0x00000080          // WS_EX_TOOLWINDOW
                 })
             {
                 this.id = id;
@@ -167,6 +217,7 @@ namespace OverlaySearch
             [DllImport("user32.dll")] internal static extern bool RegisterHotKey(IntPtr h, int id, uint mods, uint vk);
             [DllImport("user32.dll")] internal static extern bool UnregisterHotKey(IntPtr h, int id);
             [DllImport("user32.dll")] internal static extern bool SetForegroundWindow(IntPtr hWnd);
+            [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
 
             [DllImport("user32.dll")] internal static extern IntPtr GetKeyboardLayout(int idThread);
             [DllImport("user32.dll")] internal static extern IntPtr ActivateKeyboardLayout(IntPtr hkl, uint flags);
@@ -174,6 +225,26 @@ namespace OverlaySearch
             [DllImport("user32.dll")] internal static extern int GetKeyboardLayoutList(int n, IntPtr[] list);
 
             [DllImport("user32.dll")] internal static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+        }
+
+        // —— XInput（用于检测 LT/RT）—— //
+        [DllImport("xinput1_4.dll")]
+        private static extern int XInputGetState(uint dwUserIndex, out XSTATE pState);
+        // 如需兼容老系统，可改为 "xinput9_1_0.dll"
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct XSTATE
+        {
+            public uint dwPacketNumber;
+            public XGAMEPAD Gamepad;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct XGAMEPAD
+        {
+            public ushort wButtons;
+            public byte LT, RT;
+            public short LX, LY, RX, RY;
         }
     }
 }
