@@ -10,7 +10,7 @@
     <!-- 关键：不激活自己，让焦点留在 Owner 的 SearchBox -->
 
     <Window.Resources>
-        <!-- 单行普通键：行高=键高，文字垂直居中（高度加大到 64） -->
+        <!-- 单行普通键：行高=键高，文字垂直居中 -->
         <Style x:Key="KeyCell" TargetType="TextBlock">
             <Setter Property="Margin"   Value="2"/>
             <Setter Property="MinWidth" Value="68"/>
